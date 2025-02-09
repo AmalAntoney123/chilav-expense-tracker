@@ -16,6 +16,25 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
 
   Timer? _backspaceTimer;
 
+  final List<String> _paymentMethods = [
+    'Cash',
+    'UPI',
+    'Debit Card',
+    'Credit Card',
+    'Net Banking',
+  ];
+
+  final List<String> _categories = [
+    'Shopping',
+    'Food',
+    'Transport',
+    'Entertainment',
+    'Bills',
+    'Health',
+    'Education',
+    'Others',
+  ];
+
   void _updateAmount(String value) {
     setState(() {
       if (_amount == '0') {
@@ -47,6 +66,166 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
   void _stopBackspaceTimer() {
     _backspaceTimer?.cancel();
     _backspaceTimer = null;
+  }
+
+  void _showPaymentMethodPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Select Payment Method',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              ...(_paymentMethods.map((String method) {
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      _paymentMethod = method;
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: ListTile(
+                      leading: Icon(
+                        method == 'Cash'
+                            ? Icons.money
+                            : method == 'UPI'
+                                ? Icons.mobile_friendly
+                                : method == 'Debit Card'
+                                    ? Icons.credit_card
+                                    : method == 'Credit Card'
+                                        ? Icons.credit_score
+                                        : Icons.account_balance,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      title: Text(
+                        method,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      trailing: _paymentMethod == method
+                          ? Icon(Icons.check,
+                              color: Theme.of(context).colorScheme.primary)
+                          : null,
+                    ),
+                  ),
+                );
+              }).toList()),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCategoryPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Select Category',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _categories.map((String category) {
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            _category = category;
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: ListTile(
+                            leading: Icon(
+                              category == 'Shopping'
+                                  ? Icons.shopping_bag
+                                  : category == 'Food'
+                                      ? Icons.restaurant
+                                      : category == 'Transport'
+                                          ? Icons.directions_car
+                                          : category == 'Entertainment'
+                                              ? Icons.movie
+                                              : category == 'Bills'
+                                                  ? Icons.receipt_long
+                                                  : category == 'Health'
+                                                      ? Icons.medical_services
+                                                      : category == 'Education'
+                                                          ? Icons.school
+                                                          : Icons.category,
+                              color: Theme.of(context).colorScheme.tertiary,
+                            ),
+                            title: Text(
+                              category,
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            trailing: _category == category
+                                ? Icon(Icons.check,
+                                    color:
+                                        Theme.of(context).colorScheme.primary)
+                                : null,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -86,22 +265,11 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
                   Text(
                     'New Expense',
                     style: theme.textTheme.titleLarge,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.check),
-                    onPressed: () {
-                      // TODO: Save expense
-                      Navigator.of(context).pop();
-                    },
                   ),
                 ],
               ),
@@ -115,45 +283,81 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.payment, color: colorScheme.primary),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(_paymentMethod)),
-                              const Icon(Icons.arrow_drop_down),
-                            ],
+                        child: GestureDetector(
+                          onTap: _showPaymentMethodPicker,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                    _paymentMethod == 'Cash'
+                                        ? Icons.money
+                                        : _paymentMethod == 'UPI'
+                                            ? Icons.mobile_friendly
+                                            : _paymentMethod == 'Debit Card'
+                                                ? Icons.credit_card
+                                                : _paymentMethod ==
+                                                        'Credit Card'
+                                                    ? Icons.credit_score
+                                                    : Icons.account_balance,
+                                    color: colorScheme.primary),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(_paymentMethod)),
+                                const Icon(Icons.arrow_drop_down),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.category, color: colorScheme.primary),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(_category)),
-                              const Icon(Icons.arrow_drop_down),
-                            ],
+                        child: GestureDetector(
+                          onTap: _showCategoryPicker,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                    _category == 'Shopping'
+                                        ? Icons.shopping_bag
+                                        : _category == 'Food'
+                                            ? Icons.restaurant
+                                            : _category == 'Transport'
+                                                ? Icons.directions_car
+                                                : _category == 'Entertainment'
+                                                    ? Icons.movie
+                                                    : _category == 'Bills'
+                                                        ? Icons.receipt_long
+                                                        : _category == 'Health'
+                                                            ? Icons
+                                                                .medical_services
+                                                            : _category ==
+                                                                    'Education'
+                                                                ? Icons.school
+                                                                : Icons
+                                                                    .category,
+                                    color: colorScheme.tertiary),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(_category)),
+                                const Icon(Icons.arrow_drop_down),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                   // Amount Display
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -180,7 +384,6 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Add Comment Section
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 12),
@@ -190,7 +393,8 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                     ),
                     child: TextField(
                       controller: _commentController,
-                      maxLength: 100,
+                      maxLength: 50,
+                      textAlign: TextAlign.center,
                       decoration: InputDecoration(
                         hintText: 'Add comment...',
                         hintStyle: theme.textTheme.bodyLarge?.copyWith(
@@ -198,6 +402,7 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                         ),
                         border: InputBorder.none,
                         counterText: '', // Hides the default counter
+                        alignLabelWithHint: true,
                       ),
                       style: theme.textTheme.bodyLarge,
                     ),

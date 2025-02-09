@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'expense_input_screen.dart';
+import 'home_screen_customization.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,6 +20,15 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.8,
         builder: (_, controller) => const ExpenseInputScreen(),
+      ),
+    );
+  }
+
+  void _showCustomizationScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const HomeScreenCustomization(),
       ),
     );
   }
@@ -67,21 +77,43 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Column(
                     children: [
-                      Align(
-                        alignment: Alignment.topRight,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            shape: BoxShape.circle,
-                          ),
-                          padding: EdgeInsets.fromLTRB(20, 10, 10, 10),
-                          child: Icon(
-                            Icons.arrow_back_ios,
-                            color: Colors.white,
-                            size: 30,
-                          ),
-                        ),
-                      ),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Align(
+                              alignment: Alignment.topRight,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black,
+                                  shape: BoxShape.circle,
+                                ),
+                                padding: EdgeInsets.fromLTRB(10, 10, 10, 10),
+                                child: Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
+                              ),
+                            ),
+                            Align(
+                              alignment: Alignment.topLeft,
+                              child: GestureDetector(
+                                onTap: _showCustomizationScreen,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  padding: EdgeInsets.fromLTRB(10, 10, 10, 10),
+                                  child: Icon(
+                                    Icons.edit,
+                                    color: Colors.white,
+                                    size: 30,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ]),
                       Expanded(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -223,31 +255,67 @@ class _HomeScreenState extends State<HomeScreen> {
                 date: 'Yesterday',
                 color: Colors.red,
               ),
+              const SizedBox(height: 16),
+              ExpenseItem(
+                amount: 120,
+                category: 'Health',
+                date: 'Yesterday',
+                color: Colors.green,
+              ),
               const SizedBox(height: 24),
               // Bottom grid
               Row(
                 children: [
                   Expanded(
                     child: CategoryButton(
-                      icon: Icons.fastfood,
-                      label: 'Food',
+                      icon: Icons.shopping_bag,
+                      label: 'Shopping',
                       onTap: () {},
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: CategoryButton(
-                      icon: Icons.attach_money,
-                      label: 'Income',
+                      icon: Icons.restaurant,
+                      label: 'Food',
                       color: colorScheme.tertiary,
                       onTap: () {},
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
               Row(
                 children: [
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.directions_car,
+                      label: 'Transport',
+                      onTap: () {},
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.movie,
+                      label: 'Entertainment',
+                      onTap: () {},
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.receipt_long,
+                      label: 'Bills',
+                      color: colorScheme.primary,
+                      onTap: () {},
+                    ),
+                  ),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: CategoryButton(
                       icon: Icons.medical_services,
@@ -255,16 +323,29 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () {},
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.school,
+                      label: 'Education',
+                      onTap: () {},
+                    ),
+                  ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: CategoryButton(
-                      icon: Icons.directions_bus,
-                      label: 'Transport',
+                      icon: Icons.category,
+                      label: 'Others',
                       onTap: () {},
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 44),
             ],
           ),
         ),
@@ -304,7 +385,7 @@ class ExpenseItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '\$$amount.00',
+                  '₹$amount.00',
                   style: TextStyle(
                     color: colorScheme.onSurface,
                     fontSize: 18,
