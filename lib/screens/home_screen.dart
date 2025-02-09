@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'budget_allocation_screen.dart';
 import 'expense_input_screen.dart';
-import 'home_screen_customization.dart';
-import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,67 +11,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _isExtended = false;
-  List<Map<String, dynamic>> _categories = [];
-  String _budget = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCustomization();
-  }
-
-  Future<void> _loadCustomization() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? categoriesJson = prefs.getString('categories');
-    final String? budget = prefs.getString('budget');
-
-    if (categoriesJson != null) {
-      final List<dynamic> decodedCategories = jsonDecode(categoriesJson);
-      setState(() {
-        _categories = decodedCategories.map((category) {
-          Color? color;
-          if (category['color'] != null) {
-            final colorValue = int.tryParse(category['color']);
-            if (colorValue != null) {
-              color = Color(colorValue);
-            }
-          }
-          return {
-            'icon': IconData(category['icon'], fontFamily: 'MaterialIcons'),
-            'label': category['label'],
-            'visible': category['visible'],
-            'color': color,
-          };
-        }).toList();
-      });
-    } else {
-      // Use default categories if no saved data exists
-      setState(() {
-        _categories = HomeScreenCustomization.defaultCategories;
-      });
-      // Save default categories
-      await _saveCustomization();
-    }
-
-    setState(() {
-      _budget = budget ?? HomeScreenCustomization.defaultBudget;
-    });
-  }
-
-  Future<void> _saveCustomization() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        'categories',
-        jsonEncode(_categories.map((category) {
-          return {
-            'icon': (category['icon'] as IconData).codePoint,
-            'label': category['label'],
-            'visible': category['visible'],
-            'color': category['color']?.value?.toString(),
-          };
-        }).toList()));
-    await prefs.setString('budget', _budget);
-  }
 
   void _showExpenseInput() {
     showModalBottomSheet(
@@ -87,63 +24,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showCustomizationScreen() async {
-    final result = await Navigator.push(
+  void _showCustomizationScreen() {
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => HomeScreenCustomization(
-          initialCategories: _categories.isEmpty
-              ? HomeScreenCustomization.defaultCategories
-              : _categories,
-          initialBudget:
-              _budget.isEmpty ? HomeScreenCustomization.defaultBudget : _budget,
-        ),
+        builder: (context) => const BudgetAllocation(),
       ),
     );
-
-    if (result != null) {
-      setState(() {
-        _categories = List<Map<String, dynamic>>.from(result['categories']);
-        _budget = result['budget'];
-      });
-      await _saveCustomization();
-    }
-  }
-
-  Widget _buildCategoryGrid() {
-    final visibleCategories = _categories.where((c) => c['visible']).toList();
-    final List<Widget> rows = [];
-
-    for (var i = 0; i < visibleCategories.length; i += 2) {
-      final row = Row(
-        children: [
-          Expanded(
-            child: CategoryButton(
-              icon: visibleCategories[i]['icon'],
-              label: visibleCategories[i]['label'],
-              color: visibleCategories[i]['color'],
-              onTap: () {},
-            ),
-          ),
-          const SizedBox(width: 16),
-          if (i + 1 < visibleCategories.length)
-            Expanded(
-              child: CategoryButton(
-                icon: visibleCategories[i + 1]['icon'],
-                label: visibleCategories[i + 1]['label'],
-                color: visibleCategories[i + 1]['color'],
-                onTap: () {},
-              ),
-            )
-          else
-            Expanded(child: Container()),
-        ],
-      );
-      rows.add(row);
-      rows.add(const SizedBox(height: 16));
-    }
-
-    return Column(children: rows);
   }
 
   @override
@@ -377,7 +264,87 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 24),
               // Bottom grid
-              _buildCategoryGrid(),
+              Row(
+                children: [
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.shopping_bag,
+                      label: 'Shopping',
+                      onTap: () {},
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.restaurant,
+                      label: 'Food',
+                      color: colorScheme.tertiary,
+                      onTap: () {},
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.directions_car,
+                      label: 'Transport',
+                      onTap: () {},
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.movie,
+                      label: 'Entertainment',
+                      onTap: () {},
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.receipt_long,
+                      label: 'Bills',
+                      color: colorScheme.primary,
+                      onTap: () {},
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.medical_services,
+                      label: 'Health',
+                      onTap: () {},
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.school,
+                      label: 'Education',
+                      onTap: () {},
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: CategoryButton(
+                      icon: Icons.category,
+                      label: 'Others',
+                      onTap: () {},
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 44),
             ],
           ),

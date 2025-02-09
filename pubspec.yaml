@@ -37,7 +37,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_reorderable_grid_view: ^5.4.1
   shared_preferences: ^2.5.1
-
+  hive_flutter: ^1.1.0
+  hive: ^2.2.3
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.13
+  pie_chart: ^5.4.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
