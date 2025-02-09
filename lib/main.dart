@@ -16,8 +16,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: Colors.black,
         colorScheme: ColorScheme.dark(
-          primary: Colors.green,
+          primary: const Color.fromARGB(255, 64, 136, 67),
           secondary: Colors.green.shade400,
+          tertiary: const Color.fromARGB(255, 223, 62, 62),
           surface: Colors.grey[900]!,
           background: Colors.black,
         ),
@@ -26,8 +27,10 @@ class MyApp extends StatelessWidget {
       darkTheme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: Colors.black,
         colorScheme: ColorScheme.dark(
-          primary: Colors.green,
-          secondary: Colors.green.shade400,
+          primary: const Color.fromARGB(255, 76, 175, 120),
+          secondary: const Color.fromARGB(255, 102, 187, 154),
+          tertiary: const Color.fromARGB(255, 203, 75, 75),
+          onSurface: const Color.fromARGB(255, 194, 193, 193)!,
           surface: Colors.grey[900]!,
           background: Colors.black,
         ),
