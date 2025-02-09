@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'expense_input_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -8,6 +9,22 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool _isExtended = false;
+
+  void _showExpenseInput() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => const ExpenseInputScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -15,6 +32,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
+      floatingActionButton: MouseRegion(
+        onEnter: (_) => setState(() => _isExtended = true),
+        onExit: (_) => setState(() => _isExtended = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          child: _isExtended
+              ? FloatingActionButton.extended(
+                  onPressed: _showExpenseInput,
+                  backgroundColor: colorScheme.primary,
+                  label: const Text('Add Expense'),
+                  icon: const Icon(Icons.add),
+                )
+              : FloatingActionButton(
+                  onPressed: _showExpenseInput,
+                  backgroundColor: colorScheme.primary,
+                  child: const Icon(Icons.add),
+                ),
+        ),
+      ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
