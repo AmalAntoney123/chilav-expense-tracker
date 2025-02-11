@@ -1,6 +1,10 @@
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/budget_model.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+import 'dart:math' as math;
 
 class BudgetAllocation extends StatefulWidget {
   const BudgetAllocation({super.key});
@@ -33,9 +37,11 @@ IconData _getCategoryIcon(String category) {
 }
 
 class _BudgetAllocationState extends State<BudgetAllocation> {
-  late Box<BudgetModel> _budgetBox;
+  Box<BudgetModel>? _budgetBox;
   double _totalBalance = 0.0;
+  double _balance = 0.0;
   double _savingsBalance = 0.0;
+  bool _isInitialized = false;
   Map<String, double> _categoryBudgets = {
     'Shopping': 0,
     'Food': 0,
@@ -54,33 +60,136 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
   }
 
   Future<void> _initHive() async {
-    _budgetBox = await Hive.openBox<BudgetModel>('budget');
-    _loadBudgetData();
-  }
+    try {
+      if (!Hive.isBoxOpen('budget')) {
+        _budgetBox = await Hive.openBox<BudgetModel>('budget');
+      } else {
+        _budgetBox = Hive.box<BudgetModel>('budget');
+      }
 
-  void _loadBudgetData() {
-    final budgetModel = _budgetBox.get('current_budget');
-    if (budgetModel != null) {
+      if (_budgetBox == null) {
+        throw Exception('Failed to initialize budget box');
+      }
+
+      // Initialize with default values only if empty
+      if (_budgetBox!.isEmpty) {
+        final budgetModel = BudgetModel(
+          totalBalance: 0.0,
+          balance: 0.0,
+          savingsBalance: 0.0,
+          categoryBudgets: Map<String, double>.fromIterable(
+            _categoryBudgets.keys,
+            value: (key) => 0.0,
+          ),
+        );
+        await _budgetBox!.put('current_budget', budgetModel);
+      }
+
+      _loadBudgetData();
       setState(() {
-        _totalBalance = budgetModel.totalBalance;
-        _savingsBalance = budgetModel.savingsBalance;
-        _categoryBudgets =
-            Map<String, double>.from(budgetModel.categoryBudgets);
+        _isInitialized = true;
+      });
+    } catch (e) {
+      print('Error initializing Hive: $e');
+      // Only reset to default values if we couldn't load existing data
+      if (_budgetBox?.get('current_budget') == null) {
+        setState(() {
+          _totalBalance = 0.0;
+          _balance = 0.0;
+          _savingsBalance = 0.0;
+          _categoryBudgets = Map<String, double>.fromIterable(
+            _categoryBudgets.keys,
+            value: (key) => 0.0,
+          );
+        });
+      }
+      setState(() {
+        _isInitialized = true;
       });
     }
   }
 
   Future<void> _saveBudgetData() async {
-    final budgetModel = BudgetModel(
-      totalBalance: _totalBalance,
-      savingsBalance: _savingsBalance,
-      categoryBudgets: _categoryBudgets,
-    );
-    await _budgetBox.put('current_budget', budgetModel);
+    if (!_isInitialized || _budgetBox == null) {
+      print('Budget box not initialized');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please wait while the app initializes...'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final budgetModel = BudgetModel(
+        totalBalance: _totalBalance,
+        balance: _balance,
+        savingsBalance: _savingsBalance,
+        categoryBudgets: _categoryBudgets,
+      );
+      await _budgetBox!.put('current_budget', budgetModel);
+    } catch (e) {
+      print('Error saving budget data: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error saving data. Please try again.'),
+        ),
+      );
+    }
+  }
+
+  void _loadBudgetData() {
+    if (_budgetBox == null) {
+      print('Budget box is null during load');
+      return;
+    }
+
+    try {
+      final budgetModel = _budgetBox!.get('current_budget');
+      if (budgetModel != null) {
+        setState(() {
+          _totalBalance = budgetModel.totalBalance;
+          _balance = budgetModel.balance;
+          _savingsBalance = budgetModel.savingsBalance;
+          // Ensure we preserve all category keys
+          final Map<String, double> newBudgets =
+              Map<String, double>.from(_categoryBudgets);
+          budgetModel.categoryBudgets.forEach((key, value) {
+            if (newBudgets.containsKey(key)) {
+              newBudgets[key] = value;
+            }
+          });
+          _categoryBudgets = newBudgets;
+        });
+      }
+    } catch (e) {
+      print('Error loading budget data: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error loading data. Please restart the app.'),
+        ),
+      );
+    }
+  }
+
+  // Add this method to check initialization before any operation
+  bool _checkInitialization() {
+    if (!_isInitialized || _budgetBox == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please wait while the app initializes...'),
+        ),
+      );
+      return false;
+    }
+    return true;
   }
 
   void _showAddMoneyDialog() {
+    if (!_checkInitialization()) return;
     double amount = 0;
+    String source = '';
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -98,6 +207,16 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                 amount = double.tryParse(value) ?? 0;
               },
             ),
+            const SizedBox(height: 16),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'Source',
+                hintText: 'e.g., Salary, Freelance, etc.',
+              ),
+              onChanged: (value) {
+                source = value;
+              },
+            ),
           ],
         ),
         actions: [
@@ -105,13 +224,22 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () {
+              if (amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid amount'),
+                  ),
+                );
+                return;
+              }
               setState(() {
-                _totalBalance += amount;
+                _balance += amount;
               });
+              _saveBudgetData();
               Navigator.pop(context);
-              _showSavingsPrompt(amount);
+              _showSavingsPrompt(amount, source);
             },
             child: const Text('Add'),
           ),
@@ -120,8 +248,11 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
     );
   }
 
-  void _showSavingsPrompt(double addedAmount) {
-    double savingsAmount = 0;
+  void _showSavingsPrompt(double addedAmount, String source) {
+    // Suggest 20% for savings
+    double suggestedSavings = addedAmount * 0.20;
+    double savingsAmount = suggestedSavings;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -130,12 +261,23 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('Would you like to move some of ₹$addedAmount to savings?'),
+            const SizedBox(height: 8),
+            Text(
+              'Suggested savings (20%): ₹${suggestedSavings.toStringAsFixed(2)}',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             const SizedBox(height: 16),
             TextField(
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Amount to save',
                 prefixText: '₹',
+              ),
+              controller: TextEditingController(
+                text: suggestedSavings.toString(),
               ),
               onChanged: (value) {
                 savingsAmount = double.tryParse(value) ?? 0;
@@ -148,13 +290,14 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Skip'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () {
-              if (savingsAmount <= _totalBalance) {
+              if (savingsAmount <= _balance) {
                 setState(() {
-                  _totalBalance -= savingsAmount;
+                  _balance -= savingsAmount;
                   _savingsBalance += savingsAmount;
                 });
+                _saveBudgetData(); // Save the updated data
                 Navigator.pop(context);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -172,6 +315,7 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
   }
 
   void _showWithdrawFromSavings() {
+    if (!_checkInitialization()) return;
     double amount = 0;
     showDialog(
       context: context,
@@ -205,8 +349,9 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
               if (amount <= _savingsBalance) {
                 setState(() {
                   _savingsBalance -= amount;
-                  _totalBalance += amount;
+                  _balance += amount;
                 });
+                _saveBudgetData();
                 Navigator.pop(context);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -225,12 +370,13 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
 
   double _getBalanceFontSize(double amount) {
     String amountStr = amount.toStringAsFixed(2);
-    if (amountStr.length > 12) return 24;
-    if (amountStr.length > 9) return 28;
-    return 32;
+    if (amountStr.length > 12) return 32;
+    if (amountStr.length > 9) return 36;
+    return 40;
   }
 
   void _showBudgetAllocationSheet() {
+    if (!_checkInitialization()) return;
     final Map<String, double> tempBudgets = Map.from(_categoryBudgets);
     Map<String, bool> editingStates = Map.fromIterables(
       _categoryBudgets.keys,
@@ -241,423 +387,463 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: StatefulBuilder(
-          builder: (context, setState) {
-            double getTotalAllocated() {
-              return tempBudgets.values.fold(0, (sum, value) => sum + value);
-            }
-
-            void updateBudget(String category, double newValue) {
-              double totalAfterChange =
-                  getTotalAllocated() - (tempBudgets[category] ?? 0) + newValue;
-
-              if (totalAfterChange <= _totalBalance) {
-                setState(() {
-                  tempBudgets[category] = newValue;
-                });
+      useSafeArea: true,
+      elevation: 20,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              double getTotalAllocated() {
+                return tempBudgets.values.fold(0, (sum, value) => sum + value);
               }
-            }
 
-            Widget buildAmountInput(String category, double budget) {
-              if (editingStates[category]!) {
-                return SizedBox(
-                  width: 120,
-                  height: 32,
-                  child: TextFormField(
-                    initialValue: budget > 0 ? budget.toString() : '',
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      prefixText: '₹',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: BorderSide(
-                          color: Theme.of(context).colorScheme.outline,
+              void updateBudget(String category, double newValue) {
+                double totalAfterChange = getTotalAllocated() -
+                    (tempBudgets[category] ?? 0) +
+                    newValue;
+
+                if (totalAfterChange <= _totalBalance) {
+                  setState(() {
+                    tempBudgets[category] = newValue;
+                  });
+                }
+              }
+
+              Widget buildAmountInput(String category, double budget) {
+                if (editingStates[category]!) {
+                  return SizedBox(
+                    width: 120,
+                    height: 32,
+                    child: TextFormField(
+                      initialValue: budget > 0 ? budget.toString() : '',
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        prefixText: '₹',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(4),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(4),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                         ),
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: BorderSide(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 14,
+                      ),
+                      autofocus: true,
+                      onFieldSubmitted: (value) {
+                        double newValue = double.tryParse(value) ?? 0;
+                        if (newValue <=
+                            _totalBalance - (getTotalAllocated() - budget)) {
+                          updateBudget(category, newValue);
+                        }
+                        setState(() {
+                          editingStates[category] = false;
+                        });
+                      },
+                      onTapOutside: (_) {
+                        setState(() {
+                          editingStates[category] = false;
+                        });
+                      },
+                    ),
+                  );
+                }
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      editingStates[category] = true;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '₹${budget.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontSize: 14,
-                    ),
-                    autofocus: true,
-                    onFieldSubmitted: (value) {
-                      double newValue = double.tryParse(value) ?? 0;
-                      if (newValue <=
-                          _totalBalance - (getTotalAllocated() - budget)) {
-                        updateBudget(category, newValue);
-                      }
-                      setState(() {
-                        editingStates[category] = false;
-                      });
-                    },
-                    onTapOutside: (_) {
-                      setState(() {
-                        editingStates[category] = false;
-                      });
-                    },
                   ),
                 );
               }
 
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    editingStates[category] = true;
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 4,
-                    horizontal: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color:
-                        Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    '₹${budget.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            void _editCategoryBudget(String category) {
-              double currentValue = tempBudgets[category] ?? 0;
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Edit $category Budget'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Amount',
-                          prefixText: '₹',
-                        ),
-                        controller: TextEditingController(
-                          text: currentValue > 0 ? currentValue.toString() : '',
-                        ),
-                        onChanged: (value) {
-                          currentValue = double.tryParse(value) ?? 0;
-                        },
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed: () {
-                        if (currentValue <=
-                            _totalBalance -
-                                (getTotalAllocated() -
-                                    (tempBudgets[category] ?? 0))) {
-                          setState(() {
-                            tempBudgets[category] = currentValue;
-                          });
-                          Navigator.pop(context);
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Amount exceeds available budget'),
-                            ),
-                          );
-                        }
-                      },
-                      child: const Text('Save'),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            void _editTotalBudget() {
-              double newBudget = _totalBalance;
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Edit Total Budget'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Total Budget',
-                          prefixText: '₹',
-                        ),
-                        onChanged: (value) {
-                          newBudget = double.tryParse(value) ?? _totalBalance;
-                        },
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed: () async {
-                        setState(() {
-                          _totalBalance = newBudget;
-                          // If new budget is less than current allocations, reset all
-                          if (getTotalAllocated() > newBudget) {
-                            tempBudgets.forEach((key, value) {
-                              tempBudgets[key] = 0.0;
-                            });
-                          }
-                        });
-                        await _saveBudgetData();
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Save'),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.85,
-              decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              void _editCategoryBudget(String category) {
+                double currentValue = tempBudgets[category] ?? 0;
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text('Edit $category Budget'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Allocate Budget',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                            ),
-                            GestureDetector(
-                              onTap: _editTotalBudget,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.edit,
-                                      size: 16,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
+                        TextField(
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Amount',
+                            prefixText: '₹',
+                          ),
+                          controller: TextEditingController(
+                            text:
+                                currentValue > 0 ? currentValue.toString() : '',
+                          ),
+                          onChanged: (value) {
+                            currentValue = double.tryParse(value) ?? 0;
+                          },
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () {
+                          if (currentValue <=
+                              _totalBalance -
+                                  (getTotalAllocated() -
+                                      (tempBudgets[category] ?? 0))) {
+                            setState(() {
+                              tempBudgets[category] = currentValue;
+                            });
+                            Navigator.pop(context);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content:
+                                    Text('Amount exceeds available budget'),
+                              ),
+                            );
+                          }
+                        },
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              void _editTotalBudget() {
+                if (!_isInitialized) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please wait while the app initializes...'),
+                    ),
+                  );
+                  return;
+                }
+
+                double newBudget = _totalBalance;
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Edit Total Budget'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Total Budget',
+                            prefixText: '₹',
+                          ),
+                          onChanged: (value) {
+                            newBudget = double.tryParse(value) ?? _totalBalance;
+                          },
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () async {
+                          try {
+                            setState(() {
+                              _totalBalance = newBudget;
+                              // If new budget is less than current allocations, reset all
+                              if (_getCategoryTotal() > newBudget) {
+                                _categoryBudgets.forEach((key, value) {
+                                  _categoryBudgets[key] = 0.0;
+                                });
+                              }
+                            });
+                            await _saveBudgetData();
+                            Navigator.pop(context);
+                          } catch (e) {
+                            print('Error updating budget: $e');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Error updating budget. Please try again.'),
+                              ),
+                            );
+                          }
+                        },
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Allocate Budget',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Edit Total',
-                                      style: TextStyle(
+                              ),
+                              GestureDetector(
+                                onTap: _editTotalBudget,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.edit,
+                                        size: 16,
                                         color: Theme.of(context)
                                             .colorScheme
                                             .primary,
-                                        fontWeight: FontWeight.w500,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Edit Total',
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _BudgetInfoCard(
-                                title: 'Total Budget',
-                                amount: _totalBalance,
-                                icon: Icons.account_balance_wallet,
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _BudgetInfoCard(
+                                  title: 'Total Budget',
+                                  amount: _totalBalance,
+                                  icon: Icons.account_balance_wallet,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _BudgetInfoCard(
-                                title: 'Available',
-                                amount: _totalBalance - getTotalAllocated(),
-                                icon: Icons.savings,
-                                isAvailable: true,
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: _BudgetInfoCard(
+                                  title: 'Available',
+                                  amount: _totalBalance - getTotalAllocated(),
+                                  icon: Icons.savings,
+                                  isAvailable: true,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        const Divider(),
-                        const SizedBox(height: 16),
-                      ],
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: _categoryBudgets.length,
-                          itemBuilder: (context, index) {
-                            final category =
-                                _categoryBudgets.keys.elementAt(index);
-                            final budget = tempBudgets[category] ?? 0.0;
-                            final percentage = (_totalBalance > 0
-                                    ? (budget / _totalBalance * 100)
-                                    : 0.0)
-                                .round();
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ListView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                itemCount: _categoryBudgets.length,
+                                itemBuilder: (context, index) {
+                                  final category =
+                                      _categoryBudgets.keys.elementAt(index);
+                                  final budget = tempBudgets[category] ?? 0.0;
+                                  final percentage = (_totalBalance > 0
+                                          ? (budget / _totalBalance * 100)
+                                          : 0.0)
+                                      .round();
 
-                            return Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      _getCategoryIcon(category),
-                                      color: _getCategoryColor(category),
-                                      size: 24,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                  return Column(
+                                    children: [
+                                      Row(
                                         children: [
-                                          Text(
-                                            category,
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
+                                          Icon(
+                                            _getCategoryIcon(category),
+                                            color: _getCategoryColor(category),
+                                            size: 24,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  category,
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                buildAmountInput(
+                                                    category, budget),
+                                              ],
                                             ),
                                           ),
-                                          buildAmountInput(category, budget),
+                                          Text(
+                                            '$percentage%',
+                                            style: TextStyle(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withOpacity(0.7),
+                                            ),
+                                          ),
                                         ],
                                       ),
-                                    ),
-                                    Text(
-                                      '$percentage%',
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withOpacity(0.7),
+                                      const SizedBox(height: 8),
+                                      SliderTheme(
+                                        data: SliderTheme.of(context).copyWith(
+                                          activeTrackColor:
+                                              _getCategoryColor(category),
+                                          inactiveTrackColor:
+                                              _getCategoryColor(category)
+                                                  .withOpacity(0.2),
+                                          thumbColor:
+                                              _getCategoryColor(category),
+                                          overlayColor:
+                                              _getCategoryColor(category)
+                                                  .withOpacity(0.1),
+                                        ),
+                                        child: Slider(
+                                          value: budget,
+                                          min: 0,
+                                          max: _totalBalance,
+                                          onChanged: (value) {
+                                            updateBudget(category, value);
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    activeTrackColor:
-                                        _getCategoryColor(category),
-                                    inactiveTrackColor:
-                                        _getCategoryColor(category)
-                                            .withOpacity(0.2),
-                                    thumbColor: _getCategoryColor(category),
-                                    overlayColor: _getCategoryColor(category)
-                                        .withOpacity(0.1),
-                                  ),
-                                  child: Slider(
-                                    value: budget,
-                                    min: 0,
-                                    max: _totalBalance,
-                                    onChanged: (value) {
-                                      updateBudget(category, value);
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                            );
-                          },
+                                      const SizedBox(height: 16),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Cancel'),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel'),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: () async {
-                              setState(() {
-                                _categoryBudgets = tempBudgets;
-                              });
-                              await _saveBudgetData();
-                              Navigator.pop(context);
-                            },
-                            child: const Text('Save'),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                setState(() {
+                                  _categoryBudgets = tempBudgets;
+                                });
+                                await _saveBudgetData();
+                                Navigator.pop(context);
+                              },
+                              child: const Text('Save'),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -666,23 +852,23 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
   Color _getCategoryColor(String category) {
     switch (category) {
       case 'Shopping':
-        return Colors.blue;
+        return const Color(0xFF3498db); // Flat blue
       case 'Food':
-        return Theme.of(context).colorScheme.tertiary;
+        return const Color(0xFFe74c3c); // Flat red
       case 'Transport':
-        return Colors.orange;
+        return const Color(0xFFf39c12); // Flat orange
       case 'Entertainment':
-        return Colors.purple;
+        return const Color(0xFF9b59b6); // Flat purple
       case 'Bills':
-        return Theme.of(context).colorScheme.primary;
+        return const Color(0xFF1abc9c); // Flat turquoise
       case 'Health':
-        return Colors.green;
+        return const Color(0xFF2ecc71); // Flat green
       case 'Education':
-        return Colors.amber;
+        return const Color(0xFFd35400); // Flat pumpkin
       case 'Others':
-        return Colors.grey;
+        return const Color(0xFF7f8c8d); // Flat gray
       default:
-        return Colors.grey;
+        return const Color(0xFF95a5a6); // Flat light gray
     }
   }
 
@@ -714,6 +900,19 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    List<BudgetChartData> _getChartData() {
+      return _categoryBudgets.entries.map((entry) {
+        return BudgetChartData(
+          category: entry.key,
+          amount: entry.value,
+          color: _getCategoryColor(entry.key),
+          percentage: (_totalBalance > 0
+              ? ((entry.value / _totalBalance) * 100).round()
+              : 0),
+        );
+      }).toList();
+    }
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SingleChildScrollView(
@@ -728,23 +927,34 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                 children: [
                   Expanded(
                     child: AspectRatio(
-                      aspectRatio: 1,
+                      aspectRatio: 1.2,
                       child: Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: colorScheme.primary,
+                          color: colorScheme.tertiary,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Top row with back and edit buttons
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Icon(
-                                  Icons.account_balance_wallet,
-                                  color: Colors.white,
-                                  size: 32,
+                                GestureDetector(
+                                  onTap: () => Navigator.pop(context),
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    padding: const EdgeInsets.fromLTRB(
+                                        10, 10, 10, 10),
+                                    child: const Icon(
+                                      Icons.arrow_back_ios_new,
+                                      color: Colors.white,
+                                      size: 30,
+                                    ),
+                                  ),
                                 ),
                                 GestureDetector(
                                   onTap: _showBudgetAllocationSheet,
@@ -753,102 +963,139 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                                       color: Colors.black,
                                       shape: BoxShape.circle,
                                     ),
-                                    padding: const EdgeInsets.all(5),
+                                    padding: const EdgeInsets.all(10),
                                     child: const Icon(
                                       Icons.edit,
                                       color: Colors.white,
-                                      size: 20,
+                                      size: 30,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                            Center(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  '₹${_totalBalance.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize:
-                                        _getBalanceFontSize(_totalBalance),
-                                    fontWeight: FontWeight.bold,
+                            // Center balance amount
+                            Expanded(
+                              child: Center(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    '₹${_balance.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontSize: _getBalanceFontSize(_balance),
+                                      fontWeight: FontWeight.w900,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Budget',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontSize: 16,
-                              ),
+
+                            // Add the buttons here
+                            Row(
+                              children: [
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 64,
+                                    child: FilledButton.icon(
+                                      onPressed: _showAddMoneyDialog,
+                                      icon: const Icon(
+                                        Icons.add,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      label: const Text(
+                                        'Add Money',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 8),
+                                        backgroundColor: Colors.black,
+                                        foregroundColor: Colors.white,
+                                        shape: const RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.horizontal(
+                                            left: Radius.circular(22),
+                                            right: Radius.zero,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 64,
+                                    child: ClipRRect(
+                                      borderRadius:
+                                          const BorderRadius.horizontal(
+                                        right: Radius.circular(22),
+                                      ),
+                                      child: Material(
+                                        color: Colors.white,
+                                        child: InkWell(
+                                          onTap: _showWithdrawFromSavings,
+                                          child: Stack(
+                                            children: [
+                                              CustomPaint(
+                                                size: const Size.fromHeight(64),
+                                                painter: StripePainter(),
+                                              ),
+                                              Center(
+                                                child: Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.savings,
+                                                      color: Colors.black,
+                                                      size: 20,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      '₹${_savingsBalance.toStringAsFixed(0)}',
+                                                      style: const TextStyle(
+                                                        color: Colors.black,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: colorScheme.tertiary,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                            const SizedBox(height: 16),
+                            // Balance text and value at bottom
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Icon(
-                                  Icons.savings,
-                                  color: Colors.white,
-                                  size: 32,
+                                Text(
+                                  'Budget',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 16,
+                                  ),
                                 ),
-                                GestureDetector(
-                                  onTap: _showWithdrawFromSavings,
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      color: Colors.black,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    padding: const EdgeInsets.all(5),
-                                    child: const Icon(
-                                      Icons.touch_app,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
+                                Text(
+                                  '₹${_totalBalance.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],
-                            ),
-                            Center(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  '₹${_savingsBalance.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize:
-                                        _getBalanceFontSize(_savingsBalance),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Savings',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontSize: 16,
-                              ),
                             ),
                           ],
                         ),
@@ -857,110 +1104,108 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-              // Category Allocations
-              const Text(
-                'Category Allocations',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+              const SizedBox(height: 16),
+              // Card containing Category Allocations, chart and legend
+              Card(
+                elevation: 4,
+                margin: const EdgeInsets.all(0),
+                shadowColor: Colors.black.withOpacity(0.2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Shopping',
-                      amount: 2000,
-                      percentage: 20,
-                      color: Colors.blue,
-                      onTap: () {},
-                    ),
+                color: Colors.black, // Make card background dark
+                child: Padding(
+                  padding: const EdgeInsets.all(0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Category Allocations heading
+                      const Text(
+                        'Category Allocations',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white, // Make text white
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Chart
+                      _buildPieChart(),
+                      const SizedBox(height: 16),
+                      // Legend Card
+                      Card(
+                        elevation: 4,
+                        shadowColor: Colors.black.withOpacity(0.2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: _getChartData().map((data) {
+                              final percentage = _totalBalance > 0
+                                  ? ((data.amount / _totalBalance * 100)
+                                      .round())
+                                  : 0;
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: data.color,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        data.category,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 100,
+                                      child: Text(
+                                        '₹${data.amount.toStringAsFixed(0)}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(0.7),
+                                        ),
+                                        textAlign: TextAlign.right,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 60,
+                                      child: Text(
+                                        '$percentage%',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.right,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Food',
-                      amount: 1500,
-                      percentage: 15,
-                      color: colorScheme.tertiary,
-                      onTap: () {},
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Transport',
-                      amount: 1000,
-                      percentage: 10,
-                      color: Colors.orange,
-                      onTap: () {},
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Entertainment',
-                      amount: 1000,
-                      percentage: 10,
-                      color: Colors.purple,
-                      onTap: () {},
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Bills',
-                      amount: 2500,
-                      percentage: 25,
-                      color: colorScheme.primary,
-                      onTap: () {},
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Health',
-                      amount: 1000,
-                      percentage: 10,
-                      color: Colors.green,
-                      onTap: () {},
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Education',
-                      amount: 500,
-                      percentage: 5,
-                      color: Colors.amber,
-                      onTap: () {},
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: BudgetCategoryItem(
-                      category: 'Others',
-                      amount: 500,
-                      percentage: 5,
-                      color: Colors.grey,
-                      onTap: () {},
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -968,86 +1213,198 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
       ),
     );
   }
-}
 
-class BudgetCategoryItem extends StatelessWidget {
-  final String category;
-  final double amount;
-  final int percentage;
-  final Color color;
-  final VoidCallback onTap;
+  double _getCategoryTotal() {
+    return _categoryBudgets.values.fold(0, (sum, value) => sum + value);
+  }
 
-  const BudgetCategoryItem({
-    super.key,
-    required this.category,
-    required this.amount,
-    required this.percentage,
-    required this.color,
-    required this.onTap,
-  });
+  Widget _buildPieChart() {
+    final List<BudgetChartData> chartData =
+        _categoryBudgets.entries.where((entry) => entry.value > 0).map((entry) {
+      double percentage =
+          _totalBalance > 0 ? (entry.value / _totalBalance) * 100 : 0;
+      return BudgetChartData(
+        category: entry.key,
+        amount: entry.value,
+        color: _getCategoryColor(entry.key),
+        percentage: percentage.toInt(), // Convert double to int
+      );
+    }).toList();
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
+    if (chartData.isEmpty) {
+      return Container(
+        height: 300,
+        child: Center(
+          child: Text(
+            'No budget allocations yet',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+            ),
+          ),
         ),
+      );
+    }
+
+    return SfCircularChart(
+      onChartTouchInteractionUp: (ChartTouchInteractionArgs args) {
+        if (args.position != null) {
+          final pointIndex = _getPointIndex(args.position!, chartData);
+          if (pointIndex != -1) {
+            _showCategoryDetails(chartData[pointIndex]);
+          }
+        }
+      },
+      series: <CircularSeries>[
+        DoughnutSeries<BudgetChartData, String>(
+          dataSource: chartData,
+          xValueMapper: (BudgetChartData data, _) => data.category,
+          yValueMapper: (BudgetChartData data, _) => data.amount,
+          pointColorMapper: (BudgetChartData data, _) => data.color,
+          dataLabelMapper: (BudgetChartData data, _) => '${data.percentage}%',
+          dataLabelSettings: DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.inside,
+            textStyle: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          enableTooltip: true,
+          radius: '100%',
+          innerRadius: '50%',
+          strokeColor: Colors.black,
+          strokeWidth: 4,
+        ),
+      ],
+    );
+  }
+
+  int _getPointIndex(Offset position, List<BudgetChartData> chartData) {
+    // Implementation to find which segment was tapped
+    // This is a simplified version, you might need to adjust based on your needs
+    final RenderBox renderBox = context.findRenderObject() as RenderBox;
+    final size = renderBox.size;
+    final center = Offset(size.width / 2, size.height / 2);
+
+    // Calculate angle from center to touch point
+    final angle = (math.atan2(
+                  position.dy - center.dy,
+                  position.dx - center.dx,
+                ) *
+                180 /
+                math.pi +
+            360) %
+        360;
+
+    // Calculate which segment was tapped based on the angle
+    double currentAngle = 0;
+    for (int i = 0; i < chartData.length; i++) {
+      final segmentAngle = (chartData[i].amount / _totalBalance) * 360;
+      if (currentAngle <= angle && angle <= currentAngle + segmentAngle) {
+        return i;
+      }
+      currentAngle += segmentAngle;
+    }
+    return -1;
+  }
+
+  void _showCategoryDetails(BudgetChartData data) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
-                Icon(
-                  _getCategoryIcon(category),
-                  color: color,
-                  size: 24,
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: data.color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  category,
-                  style: TextStyle(
-                    fontSize: 16,
+                  data.category,
+                  style: const TextStyle(
+                    fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            Center(
-              child: Text(
-                '₹$amount',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Amount:',
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.7),
+                  ),
                 ),
-              ),
+                Text(
+                  '₹${data.amount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Text(
-                '$percentage%',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurface.withOpacity(0.5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Percentage:',
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.7),
+                  ),
                 ),
-              ),
+                Text(
+                  '${data.percentage}%',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class BudgetChartData {
+  final String category;
+  final double amount;
+  final Color color;
+  final int percentage;
+
+  BudgetChartData({
+    required this.category,
+    required this.amount,
+    required this.color,
+    required this.percentage,
+  });
 }
 
 class _BudgetInfoCard extends StatelessWidget {
@@ -1070,6 +1427,7 @@ class _BudgetInfoCard extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(16),
+      height: 100, // Add fixed height
       decoration: BoxDecoration(
         color: isAvailable
             ? colorScheme.tertiary.withOpacity(0.1)
@@ -1077,7 +1435,8 @@ class _BudgetInfoCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min, // Add this
+        crossAxisAlignment: CrossAxisAlignment.start, // Add this
         children: [
           Row(
             children: [
@@ -1096,7 +1455,7 @@ class _BudgetInfoCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const Spacer(), // Replace Expanded with Spacer
           Text(
             '₹${amount.toStringAsFixed(2)}',
             style: TextStyle(
@@ -1109,4 +1468,27 @@ class _BudgetInfoCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class StripePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black.withOpacity(0.1)
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke;
+
+    double x = -size.width;
+    while (x < size.width * 2) {
+      canvas.drawLine(
+        Offset(x, size.height),
+        Offset(x + size.height, 0),
+        paint,
+      );
+      x += 12;
+    }
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }

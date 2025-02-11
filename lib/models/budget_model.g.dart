@@ -17,22 +17,25 @@ class BudgetModelAdapter extends TypeAdapter<BudgetModel> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return BudgetModel(
-      totalBalance: fields[0] as double,
-      savingsBalance: fields[1] as double,
-      categoryBudgets: (fields[2] as Map).cast<String, double>(),
+      totalBalance: fields[0] as double? ?? 0.0,
+      savingsBalance: fields[1] as double? ?? 0.0,
+      categoryBudgets: (fields[2] as Map?)?.cast<String, double>() ?? {},
+      balance: fields[3] as double? ?? 0.0,
     );
   }
 
   @override
   void write(BinaryWriter writer, BudgetModel obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(4)
       ..writeByte(0)
       ..write(obj.totalBalance)
       ..writeByte(1)
       ..write(obj.savingsBalance)
       ..writeByte(2)
-      ..write(obj.categoryBudgets);
+      ..write(obj.categoryBudgets)
+      ..writeByte(3)
+      ..write(obj.balance);
   }
 
   @override
