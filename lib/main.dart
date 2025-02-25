@@ -6,24 +6,26 @@ import '../models/expense_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Hive and set up the directory
   await Hive.initFlutter();
 
-  // Register adapters
-  Hive.registerAdapter(BudgetModelAdapter());
-  Hive.registerAdapter(ExpenseModelAdapter());
+  // Register adapters only if they haven't been registered
+  if (!Hive.isAdapterRegistered(1)) {
+    Hive.registerAdapter(BudgetModelAdapter());
+  }
+  if (!Hive.isAdapterRegistered(2)) {
+    Hive.registerAdapter(ExpenseModelAdapter());
+  }
 
-  // Clear existing boxes and reinitialize
-  await _clearAndInitializeBoxes();
+  // Open boxes
+  await _initializeBoxes();
 
   runApp(const MyApp());
 }
 
-Future<void> _clearAndInitializeBoxes() async {
-  // Clear existing boxes
-  await Hive.deleteBoxFromDisk('budget');
-  await Hive.deleteBoxFromDisk('expenses');
-
-  // Initialize boxes with default data
+Future<void> _initializeBoxes() async {
+  // Initialize boxes
   final budgetBox = await Hive.openBox<BudgetModel>('budget');
   final expensesBox = await Hive.openBox<ExpenseModel>('expenses');
 
@@ -43,10 +45,6 @@ Future<void> _clearAndInitializeBoxes() async {
     final defaultBudget = BudgetModel.defaultBudget(defaultCategories);
     await budgetBox.put('current_budget', defaultBudget);
   }
-
-  // Close boxes
-  await budgetBox.close();
-  await expensesBox.close();
 }
 
 class MyApp extends StatelessWidget {
