@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/budget_model.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
-import 'dart:math' as math;
 
 class BudgetAllocation extends StatefulWidget {
   const BudgetAllocation({super.key});
@@ -1227,7 +1226,7 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
         category: entry.key,
         amount: entry.value,
         color: _getCategoryColor(entry.key),
-        percentage: percentage.toInt(), // Convert double to int
+        percentage: percentage.toInt(),
       );
     }).toList();
 
@@ -1246,14 +1245,6 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
     }
 
     return SfCircularChart(
-      onChartTouchInteractionUp: (ChartTouchInteractionArgs args) {
-        if (args.position != null) {
-          final pointIndex = _getPointIndex(args.position!, chartData);
-          if (pointIndex != -1) {
-            _showCategoryDetails(chartData[pointIndex]);
-          }
-        }
-      },
       series: <CircularSeries>[
         DoughnutSeries<BudgetChartData, String>(
           dataSource: chartData,
@@ -1261,10 +1252,10 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
           yValueMapper: (BudgetChartData data, _) => data.amount,
           pointColorMapper: (BudgetChartData data, _) => data.color,
           dataLabelMapper: (BudgetChartData data, _) => '${data.percentage}%',
-          dataLabelSettings: DataLabelSettings(
+          dataLabelSettings: const DataLabelSettings(
             isVisible: true,
             labelPosition: ChartDataLabelPosition.inside,
-            textStyle: const TextStyle(
+            textStyle: TextStyle(
               color: Colors.white,
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -1275,119 +1266,24 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
           innerRadius: '50%',
           strokeColor: Colors.black,
           strokeWidth: 4,
+          selectionBehavior: SelectionBehavior(
+            enable: true,
+            toggleSelection: true,
+            selectedBorderWidth: 3,
+            selectedBorderColor: Colors.black,
+            unselectedOpacity: 0.7,
+          ),
         ),
       ],
-    );
-  }
-
-  int _getPointIndex(Offset position, List<BudgetChartData> chartData) {
-    // Implementation to find which segment was tapped
-    // This is a simplified version, you might need to adjust based on your needs
-    final RenderBox renderBox = context.findRenderObject() as RenderBox;
-    final size = renderBox.size;
-    final center = Offset(size.width / 2, size.height / 2);
-
-    // Calculate angle from center to touch point
-    final angle = (math.atan2(
-                  position.dy - center.dy,
-                  position.dx - center.dx,
-                ) *
-                180 /
-                math.pi +
-            360) %
-        360;
-
-    // Calculate which segment was tapped based on the angle
-    double currentAngle = 0;
-    for (int i = 0; i < chartData.length; i++) {
-      final segmentAngle = (chartData[i].amount / _totalBalance) * 360;
-      if (currentAngle <= angle && angle <= currentAngle + segmentAngle) {
-        return i;
-      }
-      currentAngle += segmentAngle;
-    }
-    return -1;
-  }
-
-  void _showCategoryDetails(BudgetChartData data) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      tooltipBehavior: TooltipBehavior(
+        enable: true,
+        format: 'point.x: ₹point.y',
+        textStyle: const TextStyle(
+          color: Colors.black,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
         ),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: data.color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  data.category,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Amount:',
-                  style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.7),
-                  ),
-                ),
-                Text(
-                  '₹${data.amount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Percentage:',
-                  style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.7),
-                  ),
-                ),
-                Text(
-                  '${data.percentage}%',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        color: Colors.white,
       ),
     );
   }
