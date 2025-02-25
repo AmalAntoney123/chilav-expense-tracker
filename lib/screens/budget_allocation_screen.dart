@@ -55,32 +55,17 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
   @override
   void initState() {
     super.initState();
-    _initHive();
+    _initializeHive();
   }
 
-  Future<void> _initHive() async {
+  Future<void> _initializeHive() async {
     try {
-      if (!Hive.isBoxOpen('budget')) {
-        _budgetBox = await Hive.openBox<BudgetModel>('budget');
-      } else {
-        _budgetBox = Hive.box<BudgetModel>('budget');
-      }
-
-      if (_budgetBox == null) {
-        throw Exception('Failed to initialize budget box');
-      }
+      _budgetBox = await Hive.openBox<BudgetModel>('budget');
 
       // Initialize with default values only if empty
       if (_budgetBox!.isEmpty) {
-        final budgetModel = BudgetModel(
-          totalBalance: 0.0,
-          balance: 0.0,
-          savingsBalance: 0.0,
-          categoryBudgets: Map<String, double>.fromIterable(
-            _categoryBudgets.keys,
-            value: (key) => 0.0,
-          ),
-        );
+        final budgetModel =
+            BudgetModel.defaultBudget(_categoryBudgets.keys.toList());
         await _budgetBox!.put('current_budget', budgetModel);
       }
 

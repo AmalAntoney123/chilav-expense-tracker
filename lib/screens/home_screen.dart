@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'budget_allocation_screen.dart';
 import 'expense_input_screen.dart';
+import 'expense_history_screen.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import '../models/expense_model.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +34,84 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context) => const BudgetAllocation(),
       ),
     );
+  }
+
+  void _showExpenseHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ExpenseHistoryScreen(),
+      ),
+    );
+  }
+
+  Widget _buildRecentExpenses() {
+    return ValueListenableBuilder(
+      valueListenable: Hive.box<ExpenseModel>('expenses').listenable(),
+      builder: (context, Box<ExpenseModel> box, _) {
+        if (box.isEmpty) {
+          return const Center(
+            child: Text('No recent expenses'),
+          );
+        }
+
+        final expenses = box.values.toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
+        final recentExpenses = expenses.take(3).toList();
+
+        return Column(
+          children: recentExpenses
+              .map(
+                (expense) => Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: ExpenseItem(
+                    amount: expense.amount,
+                    category: expense.category,
+                    date: _getRelativeDate(expense.date),
+                    color: _getCategoryColor(expense.category),
+                  ),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  String _getRelativeDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) {
+      return 'Today';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'Shopping':
+        return Colors.blue;
+      case 'Food':
+        return Colors.red;
+      case 'Transport':
+        return Colors.green;
+      case 'Entertainment':
+        return Colors.purple;
+      case 'Bills':
+        return Colors.orange;
+      case 'Health':
+        return Colors.teal;
+      case 'Education':
+        return Colors.indigo;
+      default:
+        return Colors.grey;
+    }
   }
 
   @override
@@ -235,33 +316,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Icon(
-                    Icons.more_horiz,
+                  IconButton(
+                    icon: Icon(Icons.more_horiz),
+                    onPressed: _showExpenseHistory,
                   ),
                 ],
               ),
               const SizedBox(height: 16),
               // Expense items
-              ExpenseItem(
-                amount: 420,
-                category: 'Entertainment',
-                date: 'Today',
-                color: Colors.blue,
-              ),
-              const SizedBox(height: 16),
-              ExpenseItem(
-                amount: 260,
-                category: 'Groceries',
-                date: 'Yesterday',
-                color: Colors.red,
-              ),
-              const SizedBox(height: 16),
-              ExpenseItem(
-                amount: 120,
-                category: 'Health',
-                date: 'Yesterday',
-                color: Colors.green,
-              ),
+              _buildRecentExpenses(),
               const SizedBox(height: 24),
               // Bottom grid
               Row(

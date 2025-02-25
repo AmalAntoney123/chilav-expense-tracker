@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:hive_flutter/hive_flutter.dart';
+import '../models/expense_model.dart';
+import '../models/budget_model.dart';
 
 class ExpenseInputScreen extends StatefulWidget {
   const ExpenseInputScreen({super.key});
@@ -12,6 +15,7 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
   String _amount = '0';
   String _category = 'Shopping';
   String _paymentMethod = 'Cash';
+  DateTime _selectedDate = DateTime.now();
   final TextEditingController _commentController = TextEditingController();
 
   Timer? _backspaceTimer;
@@ -226,6 +230,75 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
         );
       },
     );
+  }
+
+  Future<void> _selectDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
+  Future<void> _saveExpense() async {
+    if (_amount == '0') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter an amount')),
+      );
+      return;
+    }
+
+    try {
+      final expensesBox = await Hive.openBox<ExpenseModel>('expenses');
+      final budgetBox = await Hive.openBox<BudgetModel>('budget');
+      final budget = budgetBox.get('current_budget');
+
+      if (budget == null) {
+        throw Exception('Budget not found');
+      }
+
+      final amount = double.parse(_amount);
+
+      if (amount > budget.balance) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Insufficient balance')),
+        );
+        return;
+      }
+
+      final expense = ExpenseModel(
+        amount: amount,
+        category: _category,
+        paymentMethod: _paymentMethod,
+        comment: _commentController.text,
+        date: _selectedDate,
+      );
+
+      await expensesBox.add(expense);
+
+      budget.balance -= amount;
+      await budgetBox.put('current_budget', budget);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Expense saved successfully')),
+        );
+      }
+    } catch (e) {
+      print('Error saving expense: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error saving expense')),
+        );
+      }
+    }
   }
 
   @override
@@ -530,9 +603,7 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                           _NumberButton(
                             label: '',
                             icon: Icons.calendar_today,
-                            onTap: () {
-                              // TODO: Add calendar functionality
-                            },
+                            onTap: _selectDate,
                             colorScheme: colorScheme,
                             backgroundColor:
                                 colorScheme.primary.withOpacity(0.6),
@@ -540,18 +611,21 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                             height: 88,
                           ),
                           const SizedBox(height: 2),
-                          Container(
-                            width: 88,
-                            height: 178,
-                            decoration: BoxDecoration(
-                              color: colorScheme.background.withOpacity(0.6),
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.check,
-                                color: Colors.white,
-                                size: 32,
+                          GestureDetector(
+                            onTap: _saveExpense,
+                            child: Container(
+                              width: 88,
+                              height: 178,
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary,
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
                               ),
                             ),
                           ),
