@@ -20,6 +20,9 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   List<ExpenseModel>? _filteredExpenses;
+  static const int _itemsPerPage = 10;
+  int _currentPage = 0;
+  bool _hasMoreItems = true;
 
   @override
   void initState() {
@@ -99,191 +102,13 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
     }
   }
 
-  Widget _buildExpenseList(List<ExpenseModel> expenses) {
-    // Sort expenses by date, most recent first
-    expenses.sort((a, b) => b.date.compareTo(a.date));
-
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: expenses.length,
-      itemBuilder: (context, index) {
-        final expense = expenses[index];
-        final subtextParts = [expense.paymentMethod];
-        if (expense.comment.isNotEmpty) {
-          subtextParts.insert(0, expense.comment);
-        }
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 12),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 50,
-                height: 50,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color:
-                        _getCategoryColor(expense.category).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        expense.date.day.toString(),
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: _getCategoryColor(expense.category),
-                        ),
-                      ),
-                      Text(
-                        DateFormat('MMM').format(expense.date),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: _getCategoryColor(expense.category),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      expense.category,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      subtextParts.join(' • '),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withOpacity(0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                '₹${expense.amount.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
-    );
-  }
-
-  Widget _buildExpenseChart(List<ExpenseModel> expenses) {
-    Map<String, double> categoryTotals = {};
-    double totalSpent = 0;
-    double maxAmount = 0;
-
-    // Calculate totals and find max amount
-    for (var expense in expenses) {
-      categoryTotals[expense.category] =
-          (categoryTotals[expense.category] ?? 0) + expense.amount;
-      totalSpent += expense.amount;
-      if (categoryTotals[expense.category]! > maxAmount) {
-        maxAmount = categoryTotals[expense.category]!;
-      }
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          height: 250,
-          child: SfCartesianChart(
-            plotAreaBorderWidth: 0,
-            primaryXAxis: CategoryAxis(
-              majorGridLines: const MajorGridLines(width: 0),
-              axisLine: const AxisLine(width: 0),
-              labelStyle: const TextStyle(
-                color: Colors.white,
-                fontSize: 12.0,
-                fontWeight: FontWeight.w500,
-              ),
-              labelRotation: 0,
-              labelPosition: ChartDataLabelPosition.outside,
-              labelAlignment: LabelAlignment.center,
-              axisLabelFormatter: (axisLabelRenderArgs) {
-                return ChartAxisLabel(
-                    _getShortCategoryName(axisLabelRenderArgs.text),
-                    axisLabelRenderArgs.textStyle);
-              },
-            ),
-            primaryYAxis: NumericAxis(
-              isVisible: false,
-              maximum: maxAmount * 1.2,
-            ),
-            series: <ChartSeries>[
-              // Single series with track
-              ColumnSeries<MapEntry<String, double>, String>(
-                dataSource: categoryTotals.entries.toList(),
-                xValueMapper: (entry, _) => entry.key,
-                yValueMapper: (entry, _) => entry.value,
-                width: 0.8,
-                spacing: 0.2,
-                pointColorMapper: (entry, _) => _getCategoryColor(entry.key),
-                borderRadius: BorderRadius.circular(16),
-                // Add track settings here
-                trackColor:
-                    const Color.fromARGB(255, 201, 201, 201).withOpacity(0.15),
-                trackBorderWidth: 0,
-                trackPadding: 0,
-                isTrackVisible: true,
-                dataLabelSettings: DataLabelSettings(
-                  isVisible: true,
-                  labelAlignment: ChartDataLabelAlignment.top,
-                  builder: (data, point, series, pointIndex, seriesIndex) {
-                    final MapEntry<String, double> entry =
-                        data as MapEntry<String, double>;
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      margin: const EdgeInsets.only(bottom: 4),
-                      decoration: BoxDecoration(
-                        color: _getCategoryColor(entry.key),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '₹${point.y.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   void _filterExpenses(String searchText) {
+    // Reset pagination whenever filter changes
+    setState(() {
+      _currentPage = 0;
+      _hasMoreItems = true;
+    });
+
     if (searchText.isEmpty) {
       setState(() => _filteredExpenses = null);
       return;
@@ -575,6 +400,268 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildExpenseList(List<ExpenseModel> expenses) {
+    // Sort expenses by date, most recent first
+    expenses.sort((a, b) => b.date.compareTo(a.date));
+
+    // Calculate pagination
+    final int startIndex = _currentPage * _itemsPerPage;
+    final int endIndex =
+        min((_currentPage + 1) * _itemsPerPage, expenses.length);
+    final List<ExpenseModel> paginatedExpenses =
+        expenses.sublist(startIndex, endIndex);
+
+    _hasMoreItems = endIndex < expenses.length;
+
+    if (expenses.isEmpty) {
+      return const Center(
+        child: Text('No expenses found'),
+      );
+    }
+
+    return Column(
+      children: [
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: paginatedExpenses.length,
+          itemBuilder: (context, index) {
+            final expense = paginatedExpenses[index];
+            final subtextParts = [expense.paymentMethod];
+            if (expense.comment.isNotEmpty) {
+              subtextParts.insert(0, expense.comment);
+            }
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 50,
+                    height: 50,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _getCategoryColor(expense.category)
+                            .withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            expense.date.day.toString(),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: _getCategoryColor(expense.category),
+                            ),
+                          ),
+                          Text(
+                            DateFormat('MMM').format(expense.date),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: _getCategoryColor(expense.category),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          expense.category,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          subtextParts.join(' • '),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '₹${expense.amount.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+          separatorBuilder: (context, index) => const SizedBox(height: 8),
+        ),
+        const SizedBox(height: 16),
+        // Simplified pagination controls
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            TextButton(
+              onPressed: _currentPage > 0
+                  ? () => setState(() {
+                        _currentPage--;
+                      })
+                  : null,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.arrow_back_ios,
+                    size: 16,
+                    color: _currentPage > 0
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey,
+                  ),
+                  Text(
+                    'Previous',
+                    style: TextStyle(
+                      color: _currentPage > 0
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: _hasMoreItems
+                  ? () => setState(() {
+                        _currentPage++;
+                      })
+                  : null,
+              child: Row(
+                children: [
+                  Text(
+                    'Next',
+                    style: TextStyle(
+                      color: _hasMoreItems
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey,
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: _hasMoreItems
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpenseChart(List<ExpenseModel> expenses) {
+    Map<String, double> categoryTotals = {};
+    double totalSpent = 0;
+    double maxAmount = 0;
+
+    // Calculate totals and find max amount
+    for (var expense in expenses) {
+      categoryTotals[expense.category] =
+          (categoryTotals[expense.category] ?? 0) + expense.amount;
+      totalSpent += expense.amount;
+      if (categoryTotals[expense.category]! > maxAmount) {
+        maxAmount = categoryTotals[expense.category]!;
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 250,
+          child: SfCartesianChart(
+            plotAreaBorderWidth: 0,
+            primaryXAxis: CategoryAxis(
+              majorGridLines: const MajorGridLines(width: 0),
+              axisLine: const AxisLine(width: 0),
+              labelStyle: const TextStyle(
+                color: Colors.white,
+                fontSize: 12.0,
+                fontWeight: FontWeight.w500,
+              ),
+              labelRotation: 0,
+              labelPosition: ChartDataLabelPosition.outside,
+              labelAlignment: LabelAlignment.center,
+              axisLabelFormatter: (axisLabelRenderArgs) {
+                return ChartAxisLabel(
+                    _getShortCategoryName(axisLabelRenderArgs.text),
+                    axisLabelRenderArgs.textStyle);
+              },
+            ),
+            primaryYAxis: NumericAxis(
+              isVisible: false,
+              maximum: maxAmount * 1.2,
+            ),
+            series: <ChartSeries>[
+              // Single series with track
+              ColumnSeries<MapEntry<String, double>, String>(
+                dataSource: categoryTotals.entries.toList(),
+                xValueMapper: (entry, _) => entry.key,
+                yValueMapper: (entry, _) => entry.value,
+                width: 0.8,
+                spacing: 0.2,
+                pointColorMapper: (entry, _) => _getCategoryColor(entry.key),
+                borderRadius: BorderRadius.circular(16),
+                // Add track settings here
+                trackColor:
+                    const Color.fromARGB(255, 201, 201, 201).withOpacity(0.15),
+                trackBorderWidth: 0,
+                trackPadding: 0,
+                isTrackVisible: true,
+                dataLabelSettings: DataLabelSettings(
+                  isVisible: true,
+                  labelAlignment: ChartDataLabelAlignment.top,
+                  builder: (data, point, series, pointIndex, seriesIndex) {
+                    final MapEntry<String, double> entry =
+                        data as MapEntry<String, double>;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      margin: const EdgeInsets.only(bottom: 4),
+                      decoration: BoxDecoration(
+                        color: _getCategoryColor(entry.key),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '₹${point.y.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
