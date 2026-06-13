@@ -9,7 +9,8 @@ import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 class ExpenseHistoryScreen extends StatefulWidget {
-  const ExpenseHistoryScreen({super.key});
+  final String? initialCategory;
+  const ExpenseHistoryScreen({super.key, this.initialCategory});
 
   @override
   State<ExpenseHistoryScreen> createState() => _ExpenseHistoryScreenState();
@@ -20,6 +21,7 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   List<ExpenseModel>? _filteredExpenses;
+  String? _categoryFilter;
   static const int _itemsPerPage = 10;
   int _currentPage = 0;
   bool _hasMoreItems = true;
@@ -28,6 +30,9 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
   void initState() {
     super.initState();
     _openBox();
+    if (widget.initialCategory != null) {
+      _categoryFilter = widget.initialCategory;
+    }
   }
 
   @override
@@ -41,6 +46,12 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
     if (mounted) {
       setState(() {
         _isLoading = false;
+        // Apply initial category filter after box is open
+        if (_categoryFilter != null && _expensesBox != null) {
+          _filteredExpenses = _expensesBox!.values
+              .where((e) => e.category == _categoryFilter)
+              .toList();
+        }
       });
     }
   }
@@ -291,9 +302,11 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  const Text(
-                                    'Total Spending',
-                                    style: TextStyle(
+                                  Text(
+                                    _categoryFilter != null
+                                        ? '$_categoryFilter Spending'
+                                        : 'Total Spending',
+                                    style: const TextStyle(
                                       color: Colors.black54,
                                       fontSize: 16,
                                     ),
@@ -314,8 +327,46 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                       ),
               ),
               const SizedBox(height: 16),
-              // Chart section - only show when not searching
-              if (_searchController.text.isEmpty)
+              // Active filter chip
+              if (_categoryFilter != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      FilterChip(
+                        label: Text(_categoryFilter!),
+                        selected: true,
+                        onSelected: (_) {
+                          setState(() {
+                            _categoryFilter = null;
+                            _filteredExpenses = null;
+                            _currentPage = 0;
+                          });
+                        },
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () {
+                          setState(() {
+                            _categoryFilter = null;
+                            _filteredExpenses = null;
+                            _currentPage = 0;
+                          });
+                        },
+                        selectedColor: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.2),
+                        checkmarkColor:
+                            Theme.of(context).colorScheme.primary,
+                        labelStyle: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              // Chart section - only show when not searching and not filtered
+              if (_searchController.text.isEmpty && _categoryFilter == null)
                 SizedBox(
                   height: 250,
                   child: _isLoading
@@ -332,7 +383,8 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                           },
                         ),
                 ),
-              if (_searchController.text.isEmpty) const SizedBox(height: 16),
+              if (_searchController.text.isEmpty && _categoryFilter == null)
+                const SizedBox(height: 16),
               // Search bar
               TextField(
                 controller: _searchController,
@@ -387,12 +439,65 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                       valueListenable: _expensesBox!.listenable(),
                       builder: (context, Box<ExpenseModel> box, _) {
                         if (box.isEmpty) {
-                          return const Center(
-                            child: Text('No expenses recorded yet'),
+                          return Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 48),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.receipt_long_outlined,
+                                    size: 64,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withOpacity(0.2),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No expenses recorded yet',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withOpacity(0.4),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           );
                         }
-                        final expenses =
+                        // Apply category filter on top of search filter
+                        List<ExpenseModel> expenses =
                             _filteredExpenses ?? box.values.toList();
+                        if (_categoryFilter != null &&
+                            _filteredExpenses == null) {
+                          expenses = expenses
+                              .where((e) => e.category == _categoryFilter)
+                              .toList();
+                        }
+                        if (expenses.isEmpty) {
+                          return Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 48),
+                              child: Text(
+                                _categoryFilter != null
+                                    ? 'No $_categoryFilter expenses yet'
+                                    : 'No expenses match your search',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withOpacity(0.4),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
                         return _buildExpenseList(expenses);
                       },
                     ),
@@ -435,75 +540,116 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
               subtextParts.insert(0, expense.comment);
             }
 
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 12),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 50,
-                    height: 50,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: _getCategoryColor(expense.category)
-                            .withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
+            return Dismissible(
+              key: Key(expense.key.toString()),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade700,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.delete_outline,
+                    color: Colors.white, size: 28),
+              ),
+              confirmDismiss: (direction) async {
+                return await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Delete expense?'),
+                    content: Text(
+                        'Remove ₹${expense.amount.toStringAsFixed(2)} (${expense.category})?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel'),
                       ),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                        ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              onDismissed: (_) async {
+                await expense.delete();
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 50,
+                      height: 50,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _getCategoryColor(expense.category)
+                              .withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              expense.date.day.toString(),
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: _getCategoryColor(expense.category),
+                              ),
+                            ),
+                            Text(
+                              DateFormat('MMM').format(expense.date),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: _getCategoryColor(expense.category),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            expense.date.day.toString(),
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: _getCategoryColor(expense.category),
+                            expense.category,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                           Text(
-                            DateFormat('MMM').format(expense.date),
+                            subtextParts.join(' • '),
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: _getCategoryColor(expense.category),
+                              fontSize: 14,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.6),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          expense.category,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Text(
-                          subtextParts.join(' • '),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      '₹${expense.amount.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '₹${expense.amount.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -574,14 +720,11 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
 
   Widget _buildExpenseChart(List<ExpenseModel> expenses) {
     Map<String, double> categoryTotals = {};
-    double totalSpent = 0;
     double maxAmount = 0;
 
-    // Calculate totals and find max amount
     for (var expense in expenses) {
       categoryTotals[expense.category] =
           (categoryTotals[expense.category] ?? 0) + expense.amount;
-      totalSpent += expense.amount;
       if (categoryTotals[expense.category]! > maxAmount) {
         maxAmount = categoryTotals[expense.category]!;
       }
@@ -594,29 +737,20 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
           height: 250,
           child: SfCartesianChart(
             plotAreaBorderWidth: 0,
-            primaryXAxis: CategoryAxis(
-              majorGridLines: const MajorGridLines(width: 0),
-              axisLine: const AxisLine(width: 0),
-              labelStyle: const TextStyle(
+            primaryXAxis: const CategoryAxis(
+              majorGridLines: MajorGridLines(width: 0),
+              axisLine: AxisLine(width: 0),
+              labelStyle: TextStyle(
                 color: Colors.white,
                 fontSize: 12.0,
                 fontWeight: FontWeight.w500,
               ),
-              labelRotation: 0,
-              labelPosition: ChartDataLabelPosition.outside,
-              labelAlignment: LabelAlignment.center,
-              axisLabelFormatter: (axisLabelRenderArgs) {
-                return ChartAxisLabel(
-                    _getShortCategoryName(axisLabelRenderArgs.text),
-                    axisLabelRenderArgs.textStyle);
-              },
             ),
             primaryYAxis: NumericAxis(
               isVisible: false,
-              maximum: maxAmount * 1.2,
+              maximum: maxAmount > 0 ? maxAmount * 1.2 : 100,
             ),
-            series: <ChartSeries>[
-              // Single series with track
+            series: <CartesianSeries>[
               ColumnSeries<MapEntry<String, double>, String>(
                 dataSource: categoryTotals.entries.toList(),
                 xValueMapper: (entry, _) => entry.key,
@@ -625,12 +759,6 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                 spacing: 0.2,
                 pointColorMapper: (entry, _) => _getCategoryColor(entry.key),
                 borderRadius: BorderRadius.circular(16),
-                // Add track settings here
-                trackColor:
-                    const Color.fromARGB(255, 201, 201, 201).withOpacity(0.15),
-                trackBorderWidth: 0,
-                trackPadding: 0,
-                isTrackVisible: true,
                 dataLabelSettings: DataLabelSettings(
                   isVisible: true,
                   labelAlignment: ChartDataLabelAlignment.top,
@@ -640,13 +768,12 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                     return Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
-                      margin: const EdgeInsets.only(bottom: 4),
                       decoration: BoxDecoration(
                         color: _getCategoryColor(entry.key),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        '₹${point.y.toStringAsFixed(0)}',
+                        '₹${point.y!.toStringAsFixed(0)}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,

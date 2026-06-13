@@ -41,9 +41,23 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
 
   void _updateAmount(String value) {
     setState(() {
+      if (value == '.') {
+        // Only allow one decimal point
+        if (_amount.contains('.')) return;
+        // Don't allow starting with just '.'
+        if (_amount == '0') {
+          _amount = '0.';
+          return;
+        }
+        _amount += '.';
+        return;
+      }
       if (_amount == '0') {
         _amount = value;
       } else {
+        // Limit to 2 decimal places
+        final dotIndex = _amount.indexOf('.');
+        if (dotIndex != -1 && _amount.length - dotIndex > 2) return;
         _amount += value;
       }
     });
@@ -247,9 +261,17 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
   }
 
   Future<void> _saveExpense() async {
-    if (_amount == '0') {
+    if (_amount == '0' || _amount.isEmpty || _amount == '0.') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter an amount')),
+      );
+      return;
+    }
+
+    final double? parsedAmount = double.tryParse(_amount);
+    if (parsedAmount == null || parsedAmount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid amount')),
       );
       return;
     }
@@ -263,17 +285,25 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
         throw Exception('Budget not found');
       }
 
-      final amount = double.parse(_amount);
+      // Compute remaining budget from actual expense records (avoids sync bug)
+      final now = DateTime.now();
+      final monthlySpent = expensesBox.values
+          .where((e) => e.date.year == now.year && e.date.month == now.month)
+          .fold(0.0, (sum, e) => sum + e.amount);
+      final remaining = budget.totalBalance - monthlySpent;
 
-      if (amount > budget.balance) {
+      if (budget.totalBalance > 0 && parsedAmount > remaining) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Insufficient balance')),
+          SnackBar(
+            content: Text(
+                'Exceeds remaining budget (₹${remaining.toStringAsFixed(2)} left)'),
+          ),
         );
         return;
       }
 
       final expense = ExpenseModel(
-        amount: amount,
+        amount: parsedAmount,
         category: _category,
         paymentMethod: _paymentMethod,
         comment: _commentController.text,
@@ -281,8 +311,8 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
       );
 
       await expensesBox.add(expense);
-
-      budget.balance -= amount;
+      // Keep balance field in sync for legacy compatibility
+      budget.balance = budget.totalBalance - (monthlySpent + parsedAmount);
       await budgetBox.put('current_budget', budget);
 
       if (mounted) {
@@ -292,7 +322,6 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
         );
       }
     } catch (e) {
-      print('Error saving expense: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error saving expense')),
@@ -561,8 +590,11 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 _NumberButton(
-                                  label: '₹',
-                                  onTap: () {},
+                                  label: '00',
+                                  onTap: () {
+                                    if (_amount != '0') _updateAmount('0');
+                                    _updateAmount('0');
+                                  },
                                   colorScheme: colorScheme,
                                   backgroundColor:
                                       colorScheme.primary.withOpacity(0.1),
@@ -609,6 +641,12 @@ class _ExpenseInputScreenState extends State<ExpenseInputScreen> {
                                 colorScheme.primary.withOpacity(0.6),
                             textColor: colorScheme.onPrimary,
                             height: 88,
+                            sublabel: _selectedDate.day == DateTime.now().day &&
+                                    _selectedDate.month ==
+                                        DateTime.now().month &&
+                                    _selectedDate.year == DateTime.now().year
+                                ? 'Today'
+                                : '${_selectedDate.day}/${_selectedDate.month}',
                           ),
                           const SizedBox(height: 2),
                           GestureDetector(
@@ -655,6 +693,7 @@ class _NumberButton extends StatelessWidget {
   final Color? backgroundColor;
   final Color? textColor;
   final double? height;
+  final String? sublabel;
 
   const _NumberButton({
     required this.label,
@@ -666,6 +705,7 @@ class _NumberButton extends StatelessWidget {
     this.backgroundColor,
     this.textColor,
     this.height,
+    this.sublabel,
   });
 
   @override
@@ -686,10 +726,27 @@ class _NumberButton extends StatelessWidget {
         ),
         child: Center(
           child: icon != null
-              ? Icon(
-                  icon,
-                  color: textColor ?? colorScheme.onSurface,
-                  size: 24,
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      icon,
+                      color: textColor ?? colorScheme.onSurface,
+                      size: 24,
+                    ),
+                    if (sublabel != null) ...[  
+                      const SizedBox(height: 4),
+                      Text(
+                        sublabel!,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: (textColor ?? colorScheme.onSurface)
+                              .withOpacity(0.85),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
                 )
               : Text(
                   label,

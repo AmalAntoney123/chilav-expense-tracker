@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'budget_allocation_screen.dart';
 import 'expense_input_screen.dart';
 import 'expense_history_screen.dart';
+import 'onboarding_screen.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/expense_model.dart';
 import '../models/budget_model.dart';
@@ -15,6 +17,52 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _isExtended = false;
+  String? _userName;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFirstLaunch();
+  }
+
+  Future<void> _checkFirstLaunch() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isComplete = prefs.getBool('onboarding_complete') ?? false;
+    final name = prefs.getString('user_name');
+    if (name != null && name.isNotEmpty && mounted) {
+      setState(() => _userName = name);
+    }
+    if (!isComplete && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showOnboardingModal();
+      });
+    }
+  }
+
+  void _showOnboardingModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.93,
+        child: OnboardingScreen(
+          onComplete: () async {
+            Navigator.pop(context);
+            final prefs = await SharedPreferences.getInstance();
+            final name = prefs.getString('user_name');
+            if (name != null && mounted) {
+              setState(() => _userName = name);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+
 
   void _showExpenseInput() {
     showModalBottomSheet(
@@ -37,11 +85,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showExpenseHistory() {
+  void _showExpenseHistory({String? category}) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const ExpenseHistoryScreen(),
+        builder: (context) =>
+            ExpenseHistoryScreen(initialCategory: category),
       ),
     );
   }
@@ -51,8 +100,44 @@ class _HomeScreenState extends State<HomeScreen> {
       valueListenable: Hive.box<ExpenseModel>('expenses').listenable(),
       builder: (context, Box<ExpenseModel> box, _) {
         if (box.isEmpty) {
-          return const Center(
-            child: Text('No recent expenses'),
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.receipt_long_outlined,
+                    size: 56,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.25),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No expenses yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.4),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tap + to record your first expense',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.25),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 
@@ -65,11 +150,15 @@ class _HomeScreenState extends State<HomeScreen> {
               .map(
                 (expense) => Padding(
                   padding: const EdgeInsets.only(bottom: 16),
-                  child: ExpenseItem(
-                    amount: expense.amount,
-                    category: expense.category,
-                    date: _getRelativeDate(expense.date),
-                    color: _getCategoryColor(expense.category),
+                  child: GestureDetector(
+                    onLongPress: () =>
+                        _confirmDeleteExpense(expense, box),
+                    child: ExpenseItem(
+                      amount: expense.amount,
+                      category: expense.category,
+                      date: _getRelativeDate(expense.date),
+                      color: _getCategoryColor(expense.category),
+                    ),
                   ),
                 ),
               )
@@ -77,6 +166,34 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+  }
+
+  Future<void> _confirmDeleteExpense(
+      ExpenseModel expense, Box<ExpenseModel> box) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete expense?'),
+        content: Text(
+            'Remove ₹${expense.amount.toStringAsFixed(2)} (${expense.category})?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.tertiary,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await expense.delete();
+    }
   }
 
   String _getRelativeDate(DateTime date) {
@@ -353,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
               // Progress indicator section
               _buildBudgetCard(),
               const SizedBox(height: 24),
@@ -362,7 +479,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Expenses History',
+                    'Recent Expenses',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -370,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   IconButton(
                     icon: Icon(Icons.more_horiz),
-                    onPressed: _showExpenseHistory,
+                    onPressed: () => _showExpenseHistory(),
                   ),
                 ],
               ),
@@ -385,7 +502,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: CategoryButton(
                       icon: Icons.shopping_bag,
                       label: 'Shopping',
-                      onTap: () {},
+                      onTap: () => _showExpenseHistory(category: 'Shopping'),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -394,7 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.restaurant,
                       label: 'Food',
                       color: colorScheme.tertiary,
-                      onTap: () {},
+                      onTap: () => _showExpenseHistory(category: 'Food'),
                     ),
                   ),
                 ],
@@ -406,7 +523,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: CategoryButton(
                       icon: Icons.directions_car,
                       label: 'Transport',
-                      onTap: () {},
+                      onTap: () => _showExpenseHistory(category: 'Transport'),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -414,7 +531,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: CategoryButton(
                       icon: Icons.movie,
                       label: 'Entertainment',
-                      onTap: () {},
+                      onTap: () =>
+                          _showExpenseHistory(category: 'Entertainment'),
                     ),
                   ),
                 ],
@@ -427,7 +545,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.receipt_long,
                       label: 'Bills',
                       color: colorScheme.primary,
-                      onTap: () {},
+                      onTap: () => _showExpenseHistory(category: 'Bills'),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -435,7 +553,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: CategoryButton(
                       icon: Icons.medical_services,
                       label: 'Health',
-                      onTap: () {},
+                      onTap: () => _showExpenseHistory(category: 'Health'),
                     ),
                   ),
                 ],
@@ -447,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: CategoryButton(
                       icon: Icons.school,
                       label: 'Education',
-                      onTap: () {},
+                      onTap: () => _showExpenseHistory(category: 'Education'),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -455,7 +573,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: CategoryButton(
                       icon: Icons.category,
                       label: 'Others',
-                      onTap: () {},
+                      onTap: () => _showExpenseHistory(category: 'Others'),
                     ),
                   ),
                 ],

@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/budget_model.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
@@ -366,6 +367,7 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
       _categoryBudgets.keys,
       List.generate(_categoryBudgets.length, (_) => false),
     );
+    bool allowPop = false;
 
     showModalBottomSheet(
       context: context,
@@ -383,18 +385,29 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
           ),
           child: StatefulBuilder(
             builder: (context, setState) {
+              bool hasChanges() {
+                for (var key in _categoryBudgets.keys) {
+                  if (tempBudgets[key] != _categoryBudgets[key]) {
+                    return true;
+                  }
+                }
+                return false;
+              }
+
               double getTotalAllocated() {
                 return tempBudgets.values.fold(0, (sum, value) => sum + value);
               }
 
               void updateBudget(String category, double newValue) {
+                // Snap to nearest ₹100
+                final rounded = ((newValue / 100).round() * 100).toDouble();
                 double totalAfterChange = getTotalAllocated() -
                     (tempBudgets[category] ?? 0) +
-                    newValue;
+                    rounded;
 
                 if (totalAfterChange <= _totalBalance) {
                   setState(() {
-                    tempBudgets[category] = newValue;
+                    tempBudgets[category] = rounded;
                   });
                 }
               }
@@ -405,8 +418,12 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                     width: 120,
                     height: 32,
                     child: TextFormField(
-                      initialValue: budget > 0 ? budget.toString() : '',
+                      initialValue:
+                          budget > 0 ? budget.toInt().toString() : '',
                       keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
                       decoration: InputDecoration(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -432,9 +449,11 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                       ),
                       autofocus: true,
                       onFieldSubmitted: (value) {
-                        double newValue = double.tryParse(value) ?? 0;
+                        final parsed = int.tryParse(value) ?? 0;
+                        final newValue = parsed.toDouble();
                         if (newValue <=
-                            _totalBalance - (getTotalAllocated() - budget)) {
+                            _totalBalance -
+                                (getTotalAllocated() - budget)) {
                           updateBudget(category, newValue);
                         }
                         setState(() {
@@ -469,7 +488,7 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      '₹${budget.toStringAsFixed(2)}',
+                      '₹${budget.toInt()}',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w500,
@@ -490,16 +509,21 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                       children: [
                         TextField(
                           keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
                           decoration: const InputDecoration(
                             labelText: 'Amount',
                             prefixText: '₹',
                           ),
                           controller: TextEditingController(
-                            text:
-                                currentValue > 0 ? currentValue.toString() : '',
+                            text: currentValue > 0
+                                ? currentValue.toInt().toString()
+                                : '',
                           ),
                           onChanged: (value) {
-                            currentValue = double.tryParse(value) ?? 0;
+                            currentValue =
+                                (int.tryParse(value) ?? 0).toDouble();
                           },
                         ),
                       ],
@@ -555,12 +579,17 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                       children: [
                         TextField(
                           keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
                           decoration: const InputDecoration(
                             labelText: 'Total Budget',
                             prefixText: '₹',
                           ),
                           onChanged: (value) {
-                            newBudget = double.tryParse(value) ?? _totalBalance;
+                            newBudget =
+                                (int.tryParse(value) ?? _totalBalance.toInt())
+                                    .toDouble();
                           },
                         ),
                       ],
@@ -601,13 +630,44 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                 );
               }
 
-              return Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: Column(
+              return PopScope(
+                canPop: !hasChanges() || allowPop,
+                onPopInvokedWithResult: (didPop, result) async {
+                  if (didPop) return;
+                  final shouldExit = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Discard Changes?'),
+                      content: const Text(
+                          'You have unsaved budget allocations. Do you want to discard them?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Keep Editing'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Discard'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (shouldExit == true) {
+                    setState(() {
+                      allowPop = true;
+                    });
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                  }
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const SizedBox(height: 8),
@@ -782,6 +842,11 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                                           value: budget,
                                           min: 0,
                                           max: _totalBalance,
+                                          // One step = ₹100
+                                          divisions: _totalBalance >= 100
+                                              ? (_totalBalance / 100).floor()
+                                              : 1,
+                                          label: '₹${budget.toInt()}',
                                           onChanged: (value) {
                                             updateBudget(category, value);
                                           },
@@ -825,7 +890,7 @@ class _BudgetAllocationState extends State<BudgetAllocation> {
                     ),
                   ],
                 ),
-              );
+              ));
             },
           ),
         ),

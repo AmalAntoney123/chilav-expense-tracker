@@ -1,5 +1,5 @@
 name: chilav
-description: "A new Flutter project."
+description: "Chilav – Personal Expense Tracker"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -42,7 +42,7 @@ dependencies:
   hive_generator: ^2.0.1
   build_runner: ^2.4.13
   pie_chart: ^5.4.0
-  syncfusion_flutter_charts: ^23.1.44
+  syncfusion_flutter_charts: ^27.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
